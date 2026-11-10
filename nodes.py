@@ -116,7 +116,35 @@ class CoLa3DDecompose:
         print(f"[CoLa3D] utils3d not pip-installed; using pinned source at {dest}", flush=True)
         return dest
 
+    # module -> wheel/pip spec; installed here only if the workflow's requirements.pip did not deliver them
+    _REL = "https://github.com/UnlimitedEditing/{r}/releases/download/v1.0%2Bpt2110cu128/{w}"
+    _DEPS = [
+        ("flash_attn", "https://github.com/UnlimitedEditing/flash-attention/releases/download/v2.8.4%2Bcu128torch2.11/flash_attn-2.8.4%2Bcu128torch2.11cxx11abiTRUE-cp312-cp312-linux_x86_64.whl"),
+        ("nvdiffrast", _REL.format(r="nvdiffrast", w="nvdiffrast-0.4.0-cp312-cp312-linux_x86_64.whl")),
+        ("cumesh", _REL.format(r="CuMesh", w="cumesh-1.0-cp312-cp312-linux_x86_64.whl")),
+        ("flex_gemm", _REL.format(r="FlexGEMM", w="flex_gemm-1.0.0-cp312-cp312-linux_x86_64.whl")),
+        ("o_voxel", _REL.format(r="TRELLIS.2", w="o_voxel-0.0.1-cp312-cp312-linux_x86_64.whl")),
+        ("spconv", "spconv-cu126"),
+        ("easydict", "easydict"), ("commentjson", "commentjson"), ("pandas", "pandas"),
+        ("cv2", "opencv-python-headless"), ("open3d", "open3d"),
+    ]
+
+    @classmethod
+    def _ensure_deps(cls):
+        import importlib.util
+
+        for mod, spec in cls._DEPS:
+            if importlib.util.find_spec(mod) is not None:
+                continue
+            print(f"[CoLa3D] missing module {mod}: pip install {spec}", flush=True)
+            args = [sys.executable, "-m", "pip", "install", "--no-compile", spec]
+            if spec.startswith("http"):
+                args.insert(4, "--no-deps")
+            out = subprocess.run(args, capture_output=True, text=True)
+            print(f"[CoLa3D] pip {mod} rc={out.returncode}: {(out.stdout + out.stderr)[-600:]}", flush=True)
+
     def run(self, image_url, seed, family, max_side):
+        self._ensure_deps()
         t0 = time.time()
         repo = _find_dir(os.path.join("scripts", "inference", "run_inference.py"))
         utonia = _find_dir(os.path.join("utonia", "model.py"), required=False)  # None if pip-installed
