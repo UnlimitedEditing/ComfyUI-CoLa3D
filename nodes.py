@@ -119,7 +119,9 @@ class CoLa3DDecompose:
     # module -> wheel/pip spec; installed here only if the workflow's requirements.pip did not deliver them
     _REL = "https://github.com/UnlimitedEditing/{r}/releases/download/v1.0%2Bpt2110cu128/{w}"
     _DEPS = [
-        ("trimesh", "trimesh"), ("matplotlib", "matplotlib"), ("lpips", "lpips"), ("timm", "timm"),
+        ("trimesh", "trimesh"), ("plyfile", "plyfile"), ("zstandard", "zstandard"), ("rtree", "rtree"),
+        ("addict", "addict"), ("skimage", "scikit-image"), ("sklearn", "scikit-learn"), ("moderngl", "moderngl"),
+        ("imageio", "imageio"), ("matplotlib", "matplotlib"), ("lpips", "lpips"), ("timm", "timm"),
         ("flash_attn", "https://github.com/UnlimitedEditing/flash-attention/releases/download/v2.8.4%2Bcu128torch2.11/flash_attn-2.8.4%2Bcu128torch2.11cxx11abiTRUE-cp312-cp312-linux_x86_64.whl"),
         ("nvdiffrast", _REL.format(r="nvdiffrast", w="nvdiffrast-0.4.0-cp312-cp312-linux_x86_64.whl")),
         ("cumesh", _REL.format(r="CuMesh", w="cumesh-1.0-cp312-cp312-linux_x86_64.whl")),
