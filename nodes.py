@@ -89,6 +89,33 @@ class CoLa3DDecompose:
     FUNCTION = "run"
     CATEGORY = "CoLa3D"
 
+    @staticmethod
+    def _ensure_utils3d(models):
+        """CoLa3D needs the pinned utils3d commit (has utils3d.torch). Use it if importable, else fetch the zip."""
+        import importlib.util
+
+        if importlib.util.find_spec("utils3d") is not None:
+            return None
+        import zipfile
+
+        import requests
+
+        dest = os.path.join(models, "utils3d_src")
+        if not os.path.isdir(os.path.join(dest, "utils3d")):
+            sha = "9a4eb15e4021b67b12c460c7057d642626897ec8"
+            r = requests.get(f"https://github.com/EasternJournalist/utils3d/archive/{sha}.zip", timeout=120)
+            r.raise_for_status()
+            os.makedirs(dest, exist_ok=True)
+            with zipfile.ZipFile(io.BytesIO(r.content)) as z:
+                z.extractall(dest)
+            inner = os.path.join(dest, f"utils3d-{sha}")
+            if os.path.isdir(os.path.join(inner, "utils3d")):
+                import shutil
+
+                shutil.move(os.path.join(inner, "utils3d"), os.path.join(dest, "utils3d"))
+        print(f"[CoLa3D] utils3d not pip-installed; using pinned source at {dest}", flush=True)
+        return dest
+
     def run(self, image_url, seed, family, max_side):
         t0 = time.time()
         repo = _find_dir(os.path.join("scripts", "inference", "run_inference.py"))
@@ -165,8 +192,9 @@ class CoLa3DDecompose:
                 os.path.join(models, "trellis_image_large", "ss_dec_conv3d_16l8_fp16.safetensors"),
             "Pointcept/Utonia|utonia.pth": os.path.join(models, "utonia", "utonia.pth"),
         }
+        utils3d_dir = self._ensure_utils3d(models)
         env = dict(os.environ)
-        pp = [repo] + ([utonia] if utonia else []) + [env.get("PYTHONPATH", "")]
+        pp = [repo] + ([utonia] if utonia else []) + ([utils3d_dir] if utils3d_dir else []) + [env.get("PYTHONPATH", "")]
         env["PYTHONPATH"] = os.pathsep.join(p for p in pp if p)
         env["COLA3D_HF_MAP"] = json.dumps(hf_map)
         env["HF_HUB_OFFLINE"] = "1"
