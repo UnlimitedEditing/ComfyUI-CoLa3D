@@ -81,6 +81,7 @@ class CoLa3DDecompose:
                 "seed": ("INT", {"default": 42, "min": 0, "max": 2**31 - 1}),
                 "family": (["q8"], {"default": "q8"}),
                 "max_side": ("INT", {"default": 0, "min": 0, "max": 2048}),
+                "max_faces": ("INT", {"default": 120000, "min": 0, "max": 5000000}),
             }
         }
 
@@ -117,6 +118,27 @@ class CoLa3DDecompose:
         return dest
 
     @staticmethod
+    def _decimate(geom, max_faces):
+        """Quadric decimation (open3d) so multi-million-face objects do not make a 100 MB GLB."""
+        import trimesh
+
+        if not max_faces or len(geom.faces) <= max_faces:
+            return geom
+        try:
+            import open3d as o3d
+
+            t = time.time()
+            m = o3d.geometry.TriangleMesh(o3d.utility.Vector3dVector(np.asarray(geom.vertices)),
+                                          o3d.utility.Vector3iVector(np.asarray(geom.faces)))
+            m = m.simplify_quadric_decimation(target_number_of_triangles=int(max_faces))
+            out = trimesh.Trimesh(np.asarray(m.vertices), np.asarray(m.triangles), process=False)
+            print(f"[CoLa3D] decimated {len(geom.faces)} -> {len(out.faces)} faces in {time.time()-t:.1f}s", flush=True)
+            return out
+        except Exception as e:  # keep full-res rather than fail the job
+            print(f"[CoLa3D] decimation failed ({e!r}); keeping {len(geom.faces)} faces", flush=True)
+            return geom
+
+    @staticmethod
     def _ensure_transformers(models):
         """CoLa3D's DINOv3 wrapper needs transformers 4.57.3 (newer releases renamed DINOv3ViTModel.layer).
         Installed into an isolated --target dir that only the inference subprocess sees."""
@@ -148,20 +170,30 @@ class CoLa3DDecompose:
 
     @classmethod
     def _ensure_deps(cls):
-        for mod, spec in cls._DEPS:
-            probe = subprocess.run([sys.executable, "-c", f"import {mod}"], capture_output=True, text=True)
-            if probe.returncode == 0:
+        t = time.time()
+        # one probe subprocess for every module, then at most two pip calls (wheels, then pure packages)
+        names = [m for m, _ in cls._DEPS]
+        code = ("import importlib.util as u; print(','.join(m for m in %r if u.find_spec(m) is None))" % (names,))
+        probe = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
+        missing = [m for m in probe.stdout.strip().split(",") if m]
+        if not missing:
+            return
+        specs = dict(cls._DEPS)
+        wheels = [specs[m] for m in missing if specs[m].startswith("http")]
+        pure = [specs[m] for m in missing if not specs[m].startswith("http")]
+        print(f"[CoLa3D] missing: {missing}", flush=True)
+        for label, args in (
+            ("wheels", [sys.executable, "-m", "pip", "install", "--no-compile", "--no-deps"] + wheels if wheels else None),
+            ("pure", [sys.executable, "-m", "pip", "install", "--no-compile"] + pure if pure else None),
+        ):
+            if not args:
                 continue
-            print(f"[CoLa3D] import {mod} fails ({probe.stderr.strip()[-200:]}): pip install {spec}", flush=True)
-            args = [sys.executable, "-m", "pip", "install", "--no-compile", spec]
-            if spec.startswith("http"):
-                args.insert(4, "--no-deps")
             out = subprocess.run(args, capture_output=True, text=True)
-            print(f"[CoLa3D] pip {mod} rc={out.returncode}: {(out.stdout + out.stderr)[-800:]}", flush=True)
-            probe = subprocess.run([sys.executable, "-c", f"import {mod}"], capture_output=True, text=True)
-            print(f"[CoLa3D] after install import {mod} rc={probe.returncode} {probe.stderr.strip()[-300:]}", flush=True)
+            print(f"[CoLa3D] pip {label} rc={out.returncode}: {(out.stdout + out.stderr)[-500:]}", flush=True)
+        probe = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
+        print(f"[CoLa3D] still missing after install: {probe.stdout.strip() or 'none'} ({time.time()-t:.1f}s)", flush=True)
 
-    def run(self, image_url, seed, family, max_side):
+    def run(self, image_url, seed, family, max_side, max_faces=120000):
         self._ensure_deps()
         t0 = time.time()
         repo = _find_dir(os.path.join("scripts", "inference", "run_inference.py"))
@@ -280,6 +312,7 @@ class CoLa3DDecompose:
             for i, p in enumerate(parts):
                 loaded = trimesh.load(p, force="scene")
                 for name, geom in loaded.geometry.items():
+                    geom = self._decimate(geom, max_faces)
                     scene.add_geometry(geom, node_name=f"object_{i}", geom_name=f"object_{i}_{name}")
         else:
             scene = trimesh.load(full[0], force="scene")
