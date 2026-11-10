@@ -119,6 +119,7 @@ class CoLa3DDecompose:
     # module -> wheel/pip spec; installed here only if the workflow's requirements.pip did not deliver them
     _REL = "https://github.com/UnlimitedEditing/{r}/releases/download/v1.0%2Bpt2110cu128/{w}"
     _DEPS = [
+        ("trimesh", "trimesh"), ("matplotlib", "matplotlib"), ("lpips", "lpips"), ("timm", "timm"),
         ("flash_attn", "https://github.com/UnlimitedEditing/flash-attention/releases/download/v2.8.4%2Bcu128torch2.11/flash_attn-2.8.4%2Bcu128torch2.11cxx11abiTRUE-cp312-cp312-linux_x86_64.whl"),
         ("nvdiffrast", _REL.format(r="nvdiffrast", w="nvdiffrast-0.4.0-cp312-cp312-linux_x86_64.whl")),
         ("cumesh", _REL.format(r="CuMesh", w="cumesh-1.0-cp312-cp312-linux_x86_64.whl")),
@@ -229,6 +230,14 @@ class CoLa3DDecompose:
         env["HF_HUB_OFFLINE"] = "1"
         env.setdefault("PYTHONUNBUFFERED", "1")
 
+        diag_mods = ('cumesh', 'flex_gemm', 'o_voxel', 'nvdiffrast', 'flash_attn', 'spconv', 'trimesh')
+        diag_code = 'import sys; print(sys.path); ' + '; '.join(
+            f"exec('try: import {m}; print(\"OK {m}\")'+chr(10)+'except Exception as e: print(\"FAIL {m}\", repr(e))')" for m in diag_mods)
+        dg = subprocess.run([sys.executable, '-c', diag_code], cwd=repo, env=env, capture_output=True, text=True)
+        print('[CoLa3D] diag: ' + dg.stdout + dg.stderr[-500:], flush=True)
+        pl = subprocess.run([sys.executable, "-m", "pip", "list"], capture_output=True, text=True)
+        print("[CoLa3D] pip list (filtered): " + " | ".join(l for l in pl.stdout.splitlines()
+              if any(k in l.lower() for k in ("cumesh", "flex", "voxel", "nvdiff", "flash", "spconv", "cumm", "torch", "utils3d", "open3d"))), flush=True)
         print(f"[CoLa3D] running: {' '.join(cmd)}", flush=True)
         proc = subprocess.Popen(cmd, cwd=repo, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                 text=True, bufsize=1)
