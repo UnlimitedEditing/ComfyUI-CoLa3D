@@ -116,6 +116,20 @@ class CoLa3DDecompose:
         print(f"[CoLa3D] utils3d not pip-installed; using pinned source at {dest}", flush=True)
         return dest
 
+    @staticmethod
+    def _ensure_transformers(models):
+        """CoLa3D's DINOv3 wrapper needs transformers 4.57.3 (newer releases renamed DINOv3ViTModel.layer).
+        Installed into an isolated --target dir that only the inference subprocess sees."""
+        dest = os.path.join(models, "tf457")
+        if not os.path.isdir(os.path.join(dest, "transformers")):
+            args = [sys.executable, "-m", "pip", "install", "--no-compile", "--target", dest,
+                    "transformers==4.57.3", "huggingface-hub==0.36.0", "tokenizers>=0.22,<0.23", "safetensors"]
+            out = subprocess.run(args, capture_output=True, text=True)
+            print(f"[CoLa3D] pip transformers==4.57.3 rc={out.returncode}: {(out.stdout + out.stderr)[-400:]}", flush=True)
+            if out.returncode != 0:
+                return None
+        return dest
+
     # module -> wheel/pip spec; installed here only if the workflow's requirements.pip did not deliver them
     _REL = "https://github.com/UnlimitedEditing/{r}/releases/download/v1.0%2Bpt2110cu128/{w}"
     _DEPS = [
@@ -226,7 +240,8 @@ class CoLa3DDecompose:
         }
         utils3d_dir = self._ensure_utils3d(models)
         env = dict(os.environ)
-        pp = [repo] + ([utonia] if utonia else []) + ([utils3d_dir] if utils3d_dir else []) + [env.get("PYTHONPATH", "")]
+        tf_dir = self._ensure_transformers(models)
+        pp = ([tf_dir] if tf_dir else []) + [repo] + ([utonia] if utonia else []) + ([utils3d_dir] if utils3d_dir else []) + [env.get("PYTHONPATH", "")]
         env["PYTHONPATH"] = os.pathsep.join(p for p in pp if p)
         env["COLA3D_HF_MAP"] = json.dumps(hf_map)
         env["HF_HUB_OFFLINE"] = "1"
