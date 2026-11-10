@@ -131,17 +131,18 @@ class CoLa3DDecompose:
 
     @classmethod
     def _ensure_deps(cls):
-        import importlib.util
-
         for mod, spec in cls._DEPS:
-            if importlib.util.find_spec(mod) is not None:
+            probe = subprocess.run([sys.executable, "-c", f"import {mod}"], capture_output=True, text=True)
+            if probe.returncode == 0:
                 continue
-            print(f"[CoLa3D] missing module {mod}: pip install {spec}", flush=True)
+            print(f"[CoLa3D] import {mod} fails ({probe.stderr.strip()[-200:]}): pip install {spec}", flush=True)
             args = [sys.executable, "-m", "pip", "install", "--no-compile", spec]
             if spec.startswith("http"):
                 args.insert(4, "--no-deps")
             out = subprocess.run(args, capture_output=True, text=True)
-            print(f"[CoLa3D] pip {mod} rc={out.returncode}: {(out.stdout + out.stderr)[-600:]}", flush=True)
+            print(f"[CoLa3D] pip {mod} rc={out.returncode}: {(out.stdout + out.stderr)[-800:]}", flush=True)
+            probe = subprocess.run([sys.executable, "-c", f"import {mod}"], capture_output=True, text=True)
+            print(f"[CoLa3D] after install import {mod} rc={probe.returncode} {probe.stderr.strip()[-300:]}", flush=True)
 
     def run(self, image_url, seed, family, max_side):
         self._ensure_deps()
