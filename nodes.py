@@ -125,9 +125,20 @@ class CoLa3DDecompose:
         if not max_faces or len(geom.faces) <= max_faces:
             return geom
         try:
+            t = time.time()
+            try:
+                import fast_simplification
+
+                red = 1.0 - float(max_faces) / float(len(geom.faces))
+                v, f = fast_simplification.simplify(np.asarray(geom.vertices, dtype=np.float32),
+                                                    np.asarray(geom.faces, dtype=np.int32), red)
+                out = trimesh.Trimesh(v, f, process=False)
+                print(f"[CoLa3D] fast-decimated {len(geom.faces)} -> {len(out.faces)} faces in {time.time()-t:.1f}s", flush=True)
+                return out
+            except ImportError:
+                pass
             import open3d as o3d
 
-            t = time.time()
             m = o3d.geometry.TriangleMesh(o3d.utility.Vector3dVector(np.asarray(geom.vertices)),
                                           o3d.utility.Vector3iVector(np.asarray(geom.faces)))
             m = m.simplify_quadric_decimation(target_number_of_triangles=int(max_faces))
@@ -165,7 +176,7 @@ class CoLa3DDecompose:
         ("o_voxel", _REL.format(r="TRELLIS.2", w="o_voxel-0.0.1-cp312-cp312-linux_x86_64.whl")),
         ("spconv", "spconv-cu126"),
         ("easydict", "easydict"), ("commentjson", "commentjson"), ("pandas", "pandas"),
-        ("cv2", "opencv-python-headless"), ("open3d", "open3d"),
+        ("cv2", "opencv-python-headless"), ("fast_simplification", "fast-simplification"),
     ]
 
     @classmethod
@@ -298,6 +309,14 @@ class CoLa3DDecompose:
         rc = proc.wait()
         if rc != 0:
             raise RuntimeError(f"CoLa3D inference failed (exit {rc}). Last output:\n" + "".join(tail[-40:]))
+
+        for jp in glob.glob(os.path.join(out_dir, "**", "*.json"), recursive=True)[:6]:
+            try:
+                txt = open(jp).read()
+                if "timing" in txt or "_s" in txt:
+                    print(f"[CoLa3D] json {os.path.basename(jp)}: {txt[:2500]}", flush=True)
+            except Exception:
+                pass
 
         pat = os.path.join(out_dir, "**", "geometry", "post_standard")
         parts = sorted(glob.glob(os.path.join(pat, "part_*.glb"), recursive=True))
